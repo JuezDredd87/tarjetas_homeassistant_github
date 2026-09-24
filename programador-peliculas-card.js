@@ -18,51 +18,47 @@ class ProgramadorPeliculasCardEditor extends HTMLElement {
 
     this.innerHTML = `
       <div class="card-config">
-        <paper-input
-          label="Backend API URL"
-          .value="${this._config.backend_api_url || ''}"
-          @value-changed="${this._valueChanged}"
-          configValue="backend_api_url"
-        ></paper-input>
-        <paper-input
-          label="ID de la carpeta de Películas (Ej: media-source://jellyfin/xyz)"
-          .value="${this._config.movies_folder_id || ''}"
-          @value-changed="${this._valueChanged}"
-          configValue="movies_folder_id"
-        ></paper-input>
-        <paper-input
-          label="ID de la carpeta de Series (Ej: media-source://jellyfin/93062...)"
-          .value="${this._config.series_folder_id || ''}"
-          @value-changed="${this._valueChanged}"
-          configValue="series_folder_id"
-        ></paper-input>
+        <div style="margin-bottom: 16px;">
+           <label style="display:block; font-weight:bold; margin-bottom:4px;">Backend API URL</label>
+           <input type="text" style="width: 100%; padding: 8px; box-sizing: border-box;" id="backend_api_url" value="${this._config.backend_api_url || ''}">
+        </div>
+        <div style="margin-bottom: 16px;">
+           <label style="display:block; font-weight:bold; margin-bottom:4px;">ID de la carpeta de Películas</label>
+           <input type="text" style="width: 100%; padding: 8px; box-sizing: border-box;" id="movies_folder_id" value="${this._config.movies_folder_id || ''}" placeholder="Ej: media-source://jellyfin/xyz">
+        </div>
+        <div style="margin-bottom: 16px;">
+           <label style="display:block; font-weight:bold; margin-bottom:4px;">ID de la carpeta de Series</label>
+           <input type="text" style="width: 100%; padding: 8px; box-sizing: border-box;" id="series_folder_id" value="${this._config.series_folder_id || ''}" placeholder="Ej: media-source://jellyfin/93062...">
+        </div>
       </div>
     `;
 
-    const inputs = this.querySelectorAll('paper-input');
+    const inputs = this.querySelectorAll('input');
     inputs.forEach(input => {
-      input.addEventListener('value-changed', this._valueChanged.bind(this));
+      // Usamos input en lugar de change para que guarde en tiempo real
+      input.addEventListener('input', this._valueChanged.bind(this));
     });
   }
 
   _valueChanged(ev) {
     if (!this._config || !this._hass) return;
     const target = ev.target;
-    if (this._config[target.configValue] === target.value) return;
+    const configValue = target.id;
+    if (this._config[configValue] === target.value) return;
 
-    if (target.configValue) {
+    if (configValue) {
       if (target.value === '') {
         const newConfig = { ...this._config };
-        delete newConfig[target.configValue];
+        delete newConfig[configValue];
         this._config = newConfig;
       } else {
         this._config = {
           ...this._config,
-          [target.configValue]: target.value,
+          [configValue]: target.value,
         };
       }
     }
-    
+
     const event = new CustomEvent("config-changed", {
       detail: { config: this._config },
       bubbles: true,
@@ -70,6 +66,7 @@ class ProgramadorPeliculasCardEditor extends HTMLElement {
     });
     this.dispatchEvent(event);
   }
+
 }
 
 customElements.define("programador-peliculas-card-editor", ProgramadorPeliculasCardEditor);
@@ -115,8 +112,8 @@ class ProgramadorPeliculasCard extends HTMLElement {
     this._loading = true;
     this.render();
 
-    const folderId = this._currentTab === 'movies' 
-      ? this._config.movies_folder_id 
+    const folderId = this._currentTab === 'movies'
+      ? this._config.movies_folder_id
       : this._config.series_folder_id;
 
     if (!folderId) {
@@ -129,12 +126,12 @@ class ProgramadorPeliculasCard extends HTMLElement {
     try {
       // Es posible que el ID proporcionado necesite el prefijo si no lo tiene
       const formattedId = folderId.startsWith('media-source://') ? folderId : `media-source://jellyfin/${folderId}`;
-      
+
       const response = await this._hass.callWS({
         type: 'media_source/browse_media',
         media_content_id: formattedId
       });
-      
+
       this._mediaItems = response.children || [];
     } catch (err) {
       console.error("Error al obtener la biblioteca multimedia:", err);
