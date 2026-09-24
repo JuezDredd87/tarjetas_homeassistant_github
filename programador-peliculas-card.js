@@ -18,30 +18,38 @@ class ProgramadorPeliculasCardEditor extends HTMLElement {
 
     this.innerHTML = `
       <div class="card-config">
-        <div class="side-by-side">
-          <paper-input
-            label="Backend API URL (requerido)"
-            .value="${this._config.backend_api_url || ''}"
-            @value-changed="${this._valueChanged}"
-            configValue="backend_api_url"
-          ></paper-input>
-        </div>
+        <paper-input
+          label="Backend API URL"
+          .value="${this._config.backend_api_url || ''}"
+          @value-changed="${this._valueChanged}"
+          configValue="backend_api_url"
+        ></paper-input>
+        <paper-input
+          label="ID de la carpeta de Películas (Ej: media-source://jellyfin/xyz)"
+          .value="${this._config.movies_folder_id || ''}"
+          @value-changed="${this._valueChanged}"
+          configValue="movies_folder_id"
+        ></paper-input>
+        <paper-input
+          label="ID de la carpeta de Series (Ej: media-source://jellyfin/93062...)"
+          .value="${this._config.series_folder_id || ''}"
+          @value-changed="${this._valueChanged}"
+          configValue="series_folder_id"
+        ></paper-input>
       </div>
     `;
 
-    // Attach event listeners for HA input changes
-    const input = this.querySelector('paper-input');
-    input.addEventListener('value-changed', this._valueChanged.bind(this));
+    const inputs = this.querySelectorAll('paper-input');
+    inputs.forEach(input => {
+      input.addEventListener('value-changed', this._valueChanged.bind(this));
+    });
   }
 
   _valueChanged(ev) {
-    if (!this._config || !this._hass) {
-      return;
-    }
+    if (!this._config || !this._hass) return;
     const target = ev.target;
-    if (this[`_${target.configValue}`] === target.value) {
-      return;
-    }
+    if (this._config[target.configValue] === target.value) return;
+
     if (target.configValue) {
       if (target.value === '') {
         const newConfig = { ...this._config };
@@ -55,7 +63,6 @@ class ProgramadorPeliculasCardEditor extends HTMLElement {
       }
     }
     
-    // Fire the config-changed event to HA
     const event = new CustomEvent("config-changed", {
       detail: { config: this._config },
       bubbles: true,
@@ -68,69 +75,213 @@ class ProgramadorPeliculasCardEditor extends HTMLElement {
 customElements.define("programador-peliculas-card-editor", ProgramadorPeliculasCardEditor);
 
 class ProgramadorPeliculasCard extends HTMLElement {
-  // Return the editor element to HA
+  constructor() {
+    super();
+    this.attachShadow({ mode: 'open' });
+    this._currentTab = 'movies'; // 'movies' o 'series'
+    this._mediaItems = [];
+    this._loading = false;
+  }
+
   static getConfigElement() {
     return document.createElement("programador-peliculas-card-editor");
   }
 
   static getStubConfig() {
     return { 
-      backend_api_url: "http://localhost:8080/api" 
+      backend_api_url: "http://localhost:8080/api",
+      movies_folder_id: "media-source://jellyfin/AQUI_ID_PELIS",
+      series_folder_id: "media-source://jellyfin/93062c10852389d61e40aa657ebce78c"
     };
   }
 
   setConfig(config) {
-    if (!config.backend_api_url) {
-      throw new Error("Es necesario definir 'backend_api_url' en la configuración");
-    }
     this._config = config;
     this.render();
   }
 
   set hass(hass) {
+    const oldHass = this._hass;
     this._hass = hass;
-    if (!this._content) {
-      this.render();
+    if (!oldHass && this._hass) {
+      // Fetch media la primera vez que tenemos hass
+      this.fetchMedia();
     }
   }
 
-  render() {
-    if (!this._config) {
+  async fetchMedia() {
+    if (!this._hass || !this._config) return;
+
+    this._loading = true;
+    this.render();
+
+    const folderId = this._currentTab === 'movies' 
+      ? this._config.movies_folder_id 
+      : this._config.series_folder_id;
+
+    if (!folderId) {
+      this._mediaItems = [];
+      this._loading = false;
+      this.render();
       return;
     }
 
-    if (!this._content) {
-      const card = document.createElement('ha-card');
-      card.header = 'Programador de Películas y Series';
-      this._content = document.createElement('div');
-      this._content.style.padding = '16px';
-      card.appendChild(this._content);
-      this.appendChild(card);
+    try {
+      // Es posible que el ID proporcionado necesite el prefijo si no lo tiene
+      const formattedId = folderId.startsWith('media-source://') ? folderId : `media-source://jellyfin/${folderId}`;
+      
+      const response = await this._hass.callWS({
+        type: 'media_source/browse_media',
+        media_content_id: formattedId
+      });
+      
+      this._mediaItems = response.children || [];
+    } catch (err) {
+      console.error("Error al obtener la biblioteca multimedia:", err);
+      this._mediaItems = [];
     }
 
-    this._content.innerHTML = `
-      <div style="text-align: center;">
-        <p>✅ Tarjeta inicializada correctamente.</p>
-        <p><strong>Backend Configurado:</strong> <code>${this._config.backend_api_url}</code></p>
-        <p style="color: gray; font-size: 0.9em; margin-top: 20px;">
-          (Aquí se renderizará el listado de Jellyfin en próximas actualizaciones)
-        </p>
+    this._loading = false;
+    this.render();
+  }
+
+  switchTab(tab) {
+    if (this._currentTab === tab) return;
+    this._currentTab = tab;
+    this.fetchMedia();
+  }
+
+  render() {
+    if (!this._config) return;
+
+    const itemsHtml = this._mediaItems.map(item => `
+      <div class="media-item">
+        <div class="media-poster" style="background-image: url('${item.thumbnail}');">
+          ${!item.thumbnail ? '<span>Sin Imagen</span>' : ''}
+        </div>
+        <div class="media-title" title="${item.title}">${item.title}</div>
+      </div>
+    `).join('');
+
+    const noConfigHtml = `
+      <div class="info-msg">
+        Configura el ID de ${this._currentTab === 'movies' ? 'Películas' : 'Series'} en el editor de la tarjeta.
       </div>
     `;
+
+    const emptyHtml = `
+      <div class="info-msg">No se encontraron elementos en esta biblioteca.</div>
+    `;
+
+    const folderId = this._currentTab === 'movies' ? this._config.movies_folder_id : this._config.series_folder_id;
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        ha-card {
+          padding: 16px;
+        }
+        .tabs {
+          display: flex;
+          justify-content: center;
+          margin-bottom: 16px;
+          gap: 10px;
+        }
+        .tab {
+          padding: 8px 16px;
+          border-radius: 20px;
+          background: var(--secondary-background-color);
+          color: var(--primary-text-color);
+          cursor: pointer;
+          font-weight: bold;
+          transition: background 0.3s;
+        }
+        .tab.active {
+          background: var(--primary-color);
+          color: white;
+        }
+        .media-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+          gap: 16px;
+          max-height: 500px;
+          overflow-y: auto;
+          padding-right: 8px;
+        }
+        .media-item {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          cursor: pointer;
+          transition: transform 0.2s;
+        }
+        .media-item:hover {
+          transform: scale(1.05);
+        }
+        .media-poster {
+          width: 100%;
+          aspect-ratio: 2 / 3;
+          background-color: var(--secondary-background-color);
+          background-size: cover;
+          background-position: center;
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--secondary-text-color);
+          font-size: 12px;
+          box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .media-title {
+          font-size: 13px;
+          text-align: center;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .info-msg {
+          text-align: center;
+          padding: 20px;
+          color: var(--secondary-text-color);
+          font-style: italic;
+        }
+        .loader {
+          text-align: center;
+          padding: 20px;
+        }
+      </style>
+      <ha-card header="Biblioteca Multimedia">
+        <div class="tabs">
+          <div class="tab ${this._currentTab === 'movies' ? 'active' : ''}" id="tab-movies">Películas</div>
+          <div class="tab ${this._currentTab === 'series' ? 'active' : ''}" id="tab-series">Series</div>
+        </div>
+        
+        ${this._loading 
+          ? '<div class="loader">Cargando biblioteca...</div>' 
+          : !folderId 
+            ? noConfigHtml 
+            : this._mediaItems.length === 0 
+              ? emptyHtml 
+              : `<div class="media-grid">${itemsHtml}</div>`
+        }
+      </ha-card>
+    `;
+
+    // Añadir eventos a las pestañas
+    this.shadowRoot.getElementById('tab-movies').addEventListener('click', () => this.switchTab('movies'));
+    this.shadowRoot.getElementById('tab-series').addEventListener('click', () => this.switchTab('series'));
   }
 
   getCardSize() {
-    return 3;
+    return 6;
   }
 }
 
 customElements.define('programador-peliculas-card', ProgramadorPeliculasCard);
 
-// Configure the card in the HA UI card picker
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "programador-peliculas-card",
   name: "Programador de Películas",
-  description: "Tarjeta tipo póster para programar películas y series desde Jellyfin.",
+  description: "Explora la biblioteca de Jellyfin para programar contenido.",
   preview: true,
 });
