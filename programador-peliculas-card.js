@@ -133,28 +133,6 @@ class ProgramadorPeliculasCard extends HTMLElement {
       });
 
       this._mediaItems = response.children || [];
-      
-      // Home Assistant Android App workaround: Firmar las URLs internamente con authSig
-      // Esto hace que la imagen tenga un token temporal y cargue nativamente sin cookies/ServiceWorker
-      const signPromises = this._mediaItems.map(async (item) => {
-        if (item.thumbnail && item.thumbnail.startsWith('/')) {
-          try {
-            const signResp = await this._hass.callWS({
-              type: 'auth/sign_path',
-              path: item.thumbnail,
-              expires: 3600
-            });
-            if (signResp && signResp.path) {
-              // Reemplazamos la URL relativa por la URL con authSig
-              item.thumbnail = signResp.path;
-            }
-          } catch(e) {
-            console.warn("No se pudo firmar la ruta:", e);
-          }
-        }
-      });
-      await Promise.all(signPromises);
-
     } catch (err) {
       console.error("Error al obtener la biblioteca multimedia:", err);
       this._mediaItems = [];
@@ -176,7 +154,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
     const itemsHtml = this._mediaItems.map(item => `
       <div class="media-item">
         <div class="media-poster">
-          ${item.thumbnail ? `<img src="${item.thumbnail}" />` : '<span>Sin Imagen</span>'}
+          ${item.thumbnail ? `<hui-image image="${item.thumbnail}"></hui-image>` : '<span>Sin Imagen</span>'}
         </div>
         <div class="media-title" title="${item.title}">${item.title}</div>
       </div>
@@ -249,10 +227,10 @@ class ProgramadorPeliculasCard extends HTMLElement {
           box-shadow: 0 4px 6px rgba(0,0,0,0.1);
           overflow: hidden;
         }
-        .media-poster img {
+        .media-poster hui-image {
           width: 100%;
           height: 100%;
-          object-fit: cover;
+          display: block;
         }
         .media-title {
           font-size: 13px;
@@ -292,6 +270,11 @@ class ProgramadorPeliculasCard extends HTMLElement {
     // Añadir eventos a las pestañas
     this.shadowRoot.getElementById('tab-movies').addEventListener('click', () => this.switchTab('movies'));
     this.shadowRoot.getElementById('tab-series').addEventListener('click', () => this.switchTab('series'));
+
+    // Asignar objeto hass a las imágenes nativas
+    this.shadowRoot.querySelectorAll('hui-image').forEach(img => {
+      img.hass = this._hass;
+    });
   }
 
   getCardSize() {
