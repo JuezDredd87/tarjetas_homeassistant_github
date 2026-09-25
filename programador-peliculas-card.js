@@ -153,173 +153,188 @@ class ProgramadorPeliculasCard extends HTMLElement {
   render() {
     if (!this._config) return;
 
+    if (!this.shadowRoot.querySelector('.card-container')) {
+      this.shadowRoot.innerHTML = `
+        <style>
+          ha-card {
+            padding: 16px;
+          }
+          .tabs {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 16px;
+            gap: 10px;
+          }
+          .tab {
+            padding: 8px 16px;
+            border-radius: 20px;
+            background: var(--secondary-background-color);
+            color: var(--primary-text-color);
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+          }
+          .tab.active {
+            background: var(--primary-color);
+            color: white;
+          }
+          .search-container {
+            margin-bottom: 16px;
+          }
+          .search-input {
+            width: 100%;
+            padding: 8px 16px;
+            border-radius: 20px;
+            border: 1px solid var(--divider-color);
+            background: var(--card-background-color);
+            color: var(--primary-text-color);
+            box-sizing: border-box;
+            outline: none;
+          }
+          .search-input:focus {
+            border-color: var(--primary-color);
+          }
+          .media-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 16px;
+            max-height: 500px;
+            overflow-y: auto;
+            padding-right: 8px;
+          }
+          .media-item {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            cursor: pointer;
+            transition: transform 0.2s;
+          }
+          .media-item:hover {
+            transform: scale(1.05);
+          }
+          .media-poster {
+            width: 100%;
+            aspect-ratio: 2 / 3;
+            background-color: var(--secondary-background-color);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--secondary-text-color);
+            font-size: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            overflow: hidden;
+          }
+          .media-poster hui-image {
+            width: 100%;
+            height: 100%;
+            display: block;
+          }
+          .media-title {
+            font-size: 13px;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .info-msg {
+            text-align: center;
+            padding: 20px;
+            color: var(--secondary-text-color);
+            font-style: italic;
+          }
+          .loader {
+            text-align: center;
+            padding: 20px;
+          }
+        </style>
+        <ha-card header="Biblioteca Multimedia">
+          <div class="card-container">
+            <div class="tabs">
+              <div class="tab" id="tab-movies">Películas</div>
+              <div class="tab" id="tab-series">Series</div>
+            </div>
+            
+            <div class="search-container">
+              <input type="text" class="search-input" id="search-input" placeholder="Buscar...">
+            </div>
+
+            <div id="grid-container"></div>
+          </div>
+        </ha-card>
+      `;
+
+      // Eventos solo se añaden una vez
+      this.shadowRoot.getElementById('tab-movies').addEventListener('click', () => this.switchTab('movies'));
+      this.shadowRoot.getElementById('tab-series').addEventListener('click', () => this.switchTab('series'));
+      
+      const searchInput = this.shadowRoot.getElementById('search-input');
+      searchInput.addEventListener('input', (e) => {
+        this._searchQuery = e.target.value;
+        this.updateGrid();
+      });
+    }
+
+    this.updateGrid();
+  }
+
+  updateGrid() {
+    const gridContainer = this.shadowRoot.getElementById('grid-container');
+    const searchInput = this.shadowRoot.getElementById('search-input');
+    const tabMovies = this.shadowRoot.getElementById('tab-movies');
+    const tabSeries = this.shadowRoot.getElementById('tab-series');
+
+    if (!gridContainer) return;
+
+    // Sincronizar el input por si cambió desde otro sitio
+    if (searchInput.value !== this._searchQuery) {
+      searchInput.value = this._searchQuery;
+    }
+
+    if (this._currentTab === 'movies') {
+      tabMovies.classList.add('active');
+      tabSeries.classList.remove('active');
+    } else {
+      tabSeries.classList.add('active');
+      tabMovies.classList.remove('active');
+    }
+
+    const folderId = this._currentTab === 'movies' ? this._config.movies_folder_id : this._config.series_folder_id;
+
+    if (this._loading) {
+      gridContainer.innerHTML = '<div class="loader">Cargando biblioteca...</div>';
+      return;
+    }
+
+    if (!folderId) {
+      gridContainer.innerHTML = `<div class="info-msg">Configura el ID de ${this._currentTab === 'movies' ? 'Películas' : 'Series'} en el editor de la tarjeta.</div>`;
+      return;
+    }
+
+    if (this._mediaItems.length === 0) {
+      gridContainer.innerHTML = `<div class="info-msg">No se encontraron elementos en esta biblioteca.</div>`;
+      return;
+    }
+
     const filteredItems = this._searchQuery
       ? this._mediaItems.filter(item => item.title.toLowerCase().includes(this._searchQuery.toLowerCase()))
       : this._mediaItems;
+
+    if (filteredItems.length === 0) {
+      gridContainer.innerHTML = `<div class="info-msg">No hay coincidencias con tu búsqueda.</div>`;
+      return;
+    }
 
     const itemsHtml = filteredItems.map(item => `
       <div class="media-item">
         <div class="media-poster">
           ${item.thumbnail ? `<hui-image image="${item.thumbnail}"></hui-image>` : '<span>Sin Imagen</span>'}
         </div>
-        <div class="media-title" title="${item.title}" style="white-space:normal; line-height:1.2;">
-          ${item.title}
-          <div style="font-size:9px; color:red; word-break:break-all; margin-top:4px;">
-            ${item.thumbnail ? item.thumbnail : 'none'}
-          </div>
-        </div>
+        <div class="media-title" title="${item.title}">${item.title}</div>
       </div>
     `).join('');
 
-    const noConfigHtml = `
-      <div class="info-msg">
-        Configura el ID de ${this._currentTab === 'movies' ? 'Películas' : 'Series'} en el editor de la tarjeta.
-      </div>
-    `;
-
-    const emptyHtml = `
-      <div class="info-msg">No se encontraron elementos en esta biblioteca.</div>
-    `;
-
-    const folderId = this._currentTab === 'movies' ? this._config.movies_folder_id : this._config.series_folder_id;
-
-    this.shadowRoot.innerHTML = `
-      <style>
-        ha-card {
-          padding: 16px;
-        }
-        .tabs {
-          display: flex;
-          justify-content: center;
-          margin-bottom: 16px;
-          gap: 10px;
-        }
-        .tab {
-          padding: 8px 16px;
-          border-radius: 20px;
-          background: var(--secondary-background-color);
-          color: var(--primary-text-color);
-          cursor: pointer;
-          font-weight: bold;
-          transition: background 0.3s;
-        }
-        .tab.active {
-          background: var(--primary-color);
-          color: white;
-        }
-        .search-container {
-          margin-bottom: 16px;
-        }
-        .search-input {
-          width: 100%;
-          padding: 8px 16px;
-          border-radius: 20px;
-          border: 1px solid var(--divider-color);
-          background: var(--card-background-color);
-          color: var(--primary-text-color);
-          box-sizing: border-box;
-          outline: none;
-        }
-        .search-input:focus {
-          border-color: var(--primary-color);
-        }
-        .media-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-          gap: 16px;
-          max-height: 500px;
-          overflow-y: auto;
-          padding-right: 8px;
-        }
-        .media-item {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-          cursor: pointer;
-          transition: transform 0.2s;
-        }
-        .media-item:hover {
-          transform: scale(1.05);
-        }
-        .media-poster {
-          width: 100%;
-          aspect-ratio: 2 / 3;
-          background-color: var(--secondary-background-color);
-          border-radius: 8px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: var(--secondary-text-color);
-          font-size: 12px;
-          box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-          overflow: hidden;
-        }
-        .media-poster hui-image {
-          width: 100%;
-          height: 100%;
-          display: block;
-        }
-        .media-title {
-          font-size: 13px;
-          text-align: center;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        .info-msg {
-          text-align: center;
-          padding: 20px;
-          color: var(--secondary-text-color);
-          font-style: italic;
-        }
-        .loader {
-          text-align: center;
-          padding: 20px;
-        }
-      </style>
-      <ha-card header="Biblioteca Multimedia">
-        <div class="tabs">
-          <div class="tab ${this._currentTab === 'movies' ? 'active' : ''}" id="tab-movies">Películas</div>
-          <div class="tab ${this._currentTab === 'series' ? 'active' : ''}" id="tab-series">Series</div>
-        </div>
-        
-        <div class="search-container">
-          <input type="text" class="search-input" id="search-input" placeholder="Buscar..." value="${this._searchQuery}">
-        </div>
-
-        ${this._loading 
-          ? '<div class="loader">Cargando biblioteca...</div>' 
-          : !folderId 
-            ? noConfigHtml 
-            : this._mediaItems.length === 0 
-              ? emptyHtml 
-              : filteredItems.length === 0
-                ? '<div class="info-msg">No hay coincidencias con tu búsqueda.</div>'
-                : `<div class="media-grid">${itemsHtml}</div>`
-        }
-      </ha-card>
-    `;
-
-    // Añadir eventos a las pestañas
-    this.shadowRoot.getElementById('tab-movies').addEventListener('click', () => this.switchTab('movies'));
-    this.shadowRoot.getElementById('tab-series').addEventListener('click', () => this.switchTab('series'));
-
-    // Evento de búsqueda (con autofocus)
-    const searchInput = this.shadowRoot.getElementById('search-input');
-    if (searchInput) {
-      searchInput.addEventListener('input', (e) => {
-        this._searchQuery = e.target.value;
-        this.render();
-      });
-      // Restaurar foco al renderizar
-      if (this._searchQuery) {
-        searchInput.focus();
-        // Mover cursor al final
-        const val = searchInput.value;
-        searchInput.value = '';
-        searchInput.value = val;
-      }
-    }
+    gridContainer.innerHTML = `<div class="media-grid">${itemsHtml}</div>`;
 
     // Asignar objeto hass a las imágenes nativas
     this.shadowRoot.querySelectorAll('hui-image').forEach(img => {
