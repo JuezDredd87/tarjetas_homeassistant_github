@@ -156,7 +156,12 @@ class ProgramadorPeliculasCard extends HTMLElement {
         <div class="media-poster">
           ${item.thumbnail ? `<hui-image image="${item.thumbnail}"></hui-image>` : '<span>Sin Imagen</span>'}
         </div>
-        <div class="media-title" title="${item.title}">${item.title}</div>
+        <div class="media-title" title="${item.title}" style="white-space:normal; line-height:1.2;">
+          ${item.title}
+          <div style="font-size:9px; color:red; word-break:break-all; margin-top:4px;">
+            ${item.thumbnail ? item.thumbnail : 'none'}
+          </div>
+        </div>
       </div>
     `).join('');
 
