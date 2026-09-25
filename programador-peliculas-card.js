@@ -133,6 +133,28 @@ class ProgramadorPeliculasCard extends HTMLElement {
       });
 
       this._mediaItems = response.children || [];
+      
+      // Home Assistant Android App workaround: Firmar las URLs internamente con authSig
+      // Esto hace que la imagen tenga un token temporal y cargue nativamente sin cookies/ServiceWorker
+      const signPromises = this._mediaItems.map(async (item) => {
+        if (item.thumbnail && item.thumbnail.startsWith('/')) {
+          try {
+            const signResp = await this._hass.callWS({
+              type: 'auth/sign_path',
+              path: item.thumbnail,
+              expires: 3600
+            });
+            if (signResp && signResp.path) {
+              // Reemplazamos la URL relativa por la URL con authSig
+              item.thumbnail = signResp.path;
+            }
+          } catch(e) {
+            console.warn("No se pudo firmar la ruta:", e);
+          }
+        }
+      });
+      await Promise.all(signPromises);
+
     } catch (err) {
       console.error("Error al obtener la biblioteca multimedia:", err);
       this._mediaItems = [];
@@ -140,44 +162,6 @@ class ProgramadorPeliculasCard extends HTMLElement {
 
     this._loading = false;
     this.render();
-
-    // Descargar imágenes en segundo plano para forzar los headers de autenticación (Bug Android)
-    this._mediaItems.forEach(item => {
-      if (item.thumbnail && !item.thumbnailBlob) {
-        let thumbUrl = item.thumbnail;
-        if (thumbUrl.startsWith('/') && this._hass && this._hass.auth && this._hass.auth.data) {
-          thumbUrl = this._hass.auth.data.hassUrl + thumbUrl;
-        }
-
-        // Salvaguarda para entornos de testing (Jest/JSDOM) que no tienen fetch ni URL
-        if (typeof window === 'undefined' || !window.fetch || !window.URL || !window.URL.createObjectURL) {
-          item.thumbnailBlob = thumbUrl;
-          this.render();
-          return;
-        }
-
-        const fetchReq = (this._hass && this._hass.fetchWithAuth)
-          ? this._hass.fetchWithAuth(thumbUrl)
-          : window.fetch(thumbUrl, {
-              headers: { "Authorization": `Bearer ${this._hass?.auth?.data?.access_token || ''}` }
-            });
-
-        fetchReq
-          .then(res => {
-            if (!res.ok) throw new Error("HTTP " + res.status);
-            return res.blob();
-          })
-          .then(blob => {
-             item.thumbnailBlob = window.URL.createObjectURL(blob);
-             this.render(); // Actualizar UI
-          })
-          .catch(err => {
-             console.warn("Fallo al descargar blob de imagen:", err);
-             item.thumbnailBlob = thumbUrl; // Fallback
-             this.render();
-          });
-      }
-    });
   }
 
   switchTab(tab) {
@@ -189,23 +173,14 @@ class ProgramadorPeliculasCard extends HTMLElement {
   render() {
     if (!this._config) return;
 
-    const itemsHtml = this._mediaItems.map(item => {
-      let thumb = item.thumbnailBlob;
-      if (!thumb && item.thumbnail) {
-        thumb = item.thumbnail;
-        if (thumb.startsWith('/') && this._hass && this._hass.auth && this._hass.auth.data) {
-          thumb = this._hass.auth.data.hassUrl + thumb;
-        }
-      }
-      return `
+    const itemsHtml = this._mediaItems.map(item => `
       <div class="media-item">
         <div class="media-poster">
-          ${thumb ? `<img src="${thumb}" />` : '<span>Sin Imagen</span>'}
+          ${item.thumbnail ? `<img src="${item.thumbnail}" />` : '<span>Sin Imagen</span>'}
         </div>
         <div class="media-title" title="${item.title}">${item.title}</div>
       </div>
-      `;
-    }).join('');
+    `).join('');
 
     const noConfigHtml = `
       <div class="info-msg">
