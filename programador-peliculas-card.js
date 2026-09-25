@@ -140,6 +140,44 @@ class ProgramadorPeliculasCard extends HTMLElement {
 
     this._loading = false;
     this.render();
+
+    // Descargar imágenes en segundo plano para forzar los headers de autenticación (Bug Android)
+    this._mediaItems.forEach(item => {
+      if (item.thumbnail && !item.thumbnailBlob) {
+        let thumbUrl = item.thumbnail;
+        if (thumbUrl.startsWith('/') && this._hass && this._hass.auth && this._hass.auth.data) {
+          thumbUrl = this._hass.auth.data.hassUrl + thumbUrl;
+        }
+
+        // Salvaguarda para entornos de testing (Jest/JSDOM) que no tienen fetch ni URL
+        if (typeof window === 'undefined' || !window.fetch || !window.URL || !window.URL.createObjectURL) {
+          item.thumbnailBlob = thumbUrl;
+          this.render();
+          return;
+        }
+
+        const fetchReq = (this._hass && this._hass.fetchWithAuth)
+          ? this._hass.fetchWithAuth(thumbUrl)
+          : window.fetch(thumbUrl, {
+              headers: { "Authorization": `Bearer ${this._hass?.auth?.data?.access_token || ''}` }
+            });
+
+        fetchReq
+          .then(res => {
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            return res.blob();
+          })
+          .then(blob => {
+             item.thumbnailBlob = window.URL.createObjectURL(blob);
+             this.render(); // Actualizar UI
+          })
+          .catch(err => {
+             console.warn("Fallo al descargar blob de imagen:", err);
+             item.thumbnailBlob = thumbUrl; // Fallback
+             this.render();
+          });
+      }
+    });
   }
 
   switchTab(tab) {
@@ -152,10 +190,12 @@ class ProgramadorPeliculasCard extends HTMLElement {
     if (!this._config) return;
 
     const itemsHtml = this._mediaItems.map(item => {
-      let thumb = item.thumbnail || '';
-      // Asegurar que si la URL es relativa, use la URL base de Home Assistant
-      if (thumb.startsWith('/') && this._hass && this._hass.auth && this._hass.auth.data) {
-        thumb = this._hass.auth.data.hassUrl + thumb;
+      let thumb = item.thumbnailBlob;
+      if (!thumb && item.thumbnail) {
+        thumb = item.thumbnail;
+        if (thumb.startsWith('/') && this._hass && this._hass.auth && this._hass.auth.data) {
+          thumb = this._hass.auth.data.hassUrl + thumb;
+        }
       }
       return `
       <div class="media-item">
