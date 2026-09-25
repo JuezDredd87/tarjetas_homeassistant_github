@@ -153,8 +153,8 @@ class ProgramadorPeliculasCard extends HTMLElement {
 
     const itemsHtml = this._mediaItems.map(item => `
       <div class="media-item">
-        <div class="media-poster" style="background-image: url('${item.thumbnail}');">
-          ${!item.thumbnail ? '<span>Sin Imagen</span>' : ''}
+        <div class="media-poster">
+          ${item.thumbnail ? `<img src="${item.thumbnail}" loading="lazy" />` : '<span>Sin Imagen</span>'}
         </div>
         <div class="media-title" title="${item.title}">${item.title}</div>
       </div>
@@ -218,8 +218,6 @@ class ProgramadorPeliculasCard extends HTMLElement {
           width: 100%;
           aspect-ratio: 2 / 3;
           background-color: var(--secondary-background-color);
-          background-size: cover;
-          background-position: center;
           border-radius: 8px;
           display: flex;
           align-items: center;
@@ -227,6 +225,12 @@ class ProgramadorPeliculasCard extends HTMLElement {
           color: var(--secondary-text-color);
           font-size: 12px;
           box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+          overflow: hidden;
+        }
+        .media-poster img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
         }
         .media-title {
           font-size: 13px;
