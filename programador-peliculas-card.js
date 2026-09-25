@@ -151,14 +151,21 @@ class ProgramadorPeliculasCard extends HTMLElement {
   render() {
     if (!this._config) return;
 
-    const itemsHtml = this._mediaItems.map(item => `
+    const itemsHtml = this._mediaItems.map(item => {
+      let thumb = item.thumbnail || '';
+      // Asegurar que si la URL es relativa, use la URL base de Home Assistant
+      if (thumb.startsWith('/') && this._hass && this._hass.auth && this._hass.auth.data) {
+        thumb = this._hass.auth.data.hassUrl + thumb;
+      }
+      return `
       <div class="media-item">
         <div class="media-poster">
-          ${item.thumbnail ? `<img src="${item.thumbnail}" loading="lazy" />` : '<span>Sin Imagen</span>'}
+          ${thumb ? `<img src="${thumb}" />` : '<span>Sin Imagen</span>'}
         </div>
         <div class="media-title" title="${item.title}">${item.title}</div>
       </div>
-    `).join('');
+      `;
+    }).join('');
 
     const noConfigHtml = `
       <div class="info-msg">
