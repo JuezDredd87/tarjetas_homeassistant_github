@@ -77,6 +77,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
     this.attachShadow({ mode: 'open' });
     this._currentTab = 'movies'; // 'movies' o 'series'
     this._mediaItems = [];
+    this._searchQuery = '';
     this._loading = false;
   }
 
@@ -145,13 +146,18 @@ class ProgramadorPeliculasCard extends HTMLElement {
   switchTab(tab) {
     if (this._currentTab === tab) return;
     this._currentTab = tab;
+    this._searchQuery = '';
     this.fetchMedia();
   }
 
   render() {
     if (!this._config) return;
 
-    const itemsHtml = this._mediaItems.map(item => `
+    const filteredItems = this._searchQuery
+      ? this._mediaItems.filter(item => item.title.toLowerCase().includes(this._searchQuery.toLowerCase()))
+      : this._mediaItems;
+
+    const itemsHtml = filteredItems.map(item => `
       <div class="media-item">
         <div class="media-poster">
           ${item.thumbnail ? `<hui-image image="${item.thumbnail}"></hui-image>` : '<span>Sin Imagen</span>'}
@@ -200,6 +206,22 @@ class ProgramadorPeliculasCard extends HTMLElement {
         .tab.active {
           background: var(--primary-color);
           color: white;
+        }
+        .search-container {
+          margin-bottom: 16px;
+        }
+        .search-input {
+          width: 100%;
+          padding: 8px 16px;
+          border-radius: 20px;
+          border: 1px solid var(--divider-color);
+          background: var(--card-background-color);
+          color: var(--primary-text-color);
+          box-sizing: border-box;
+          outline: none;
+        }
+        .search-input:focus {
+          border-color: var(--primary-color);
         }
         .media-grid {
           display: grid;
@@ -261,13 +283,19 @@ class ProgramadorPeliculasCard extends HTMLElement {
           <div class="tab ${this._currentTab === 'series' ? 'active' : ''}" id="tab-series">Series</div>
         </div>
         
+        <div class="search-container">
+          <input type="text" class="search-input" id="search-input" placeholder="Buscar..." value="${this._searchQuery}">
+        </div>
+
         ${this._loading 
           ? '<div class="loader">Cargando biblioteca...</div>' 
           : !folderId 
             ? noConfigHtml 
             : this._mediaItems.length === 0 
               ? emptyHtml 
-              : `<div class="media-grid">${itemsHtml}</div>`
+              : filteredItems.length === 0
+                ? '<div class="info-msg">No hay coincidencias con tu búsqueda.</div>'
+                : `<div class="media-grid">${itemsHtml}</div>`
         }
       </ha-card>
     `;
@@ -275,6 +303,23 @@ class ProgramadorPeliculasCard extends HTMLElement {
     // Añadir eventos a las pestañas
     this.shadowRoot.getElementById('tab-movies').addEventListener('click', () => this.switchTab('movies'));
     this.shadowRoot.getElementById('tab-series').addEventListener('click', () => this.switchTab('series'));
+
+    // Evento de búsqueda (con autofocus)
+    const searchInput = this.shadowRoot.getElementById('search-input');
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        this._searchQuery = e.target.value;
+        this.render();
+      });
+      // Restaurar foco al renderizar
+      if (this._searchQuery) {
+        searchInput.focus();
+        // Mover cursor al final
+        const val = searchInput.value;
+        searchInput.value = '';
+        searchInput.value = val;
+      }
+    }
 
     // Asignar objeto hass a las imágenes nativas
     this.shadowRoot.querySelectorAll('hui-image').forEach(img => {
