@@ -484,24 +484,13 @@ class ProgramadorPeliculasCard extends HTMLElement {
     btn.disabled = true;
 
     try {
-      if (!this._config.backend_api_url) {
-        throw new Error("La URL de la API del backend no está configurada.");
-      }
-
-      const response = await fetch(this._config.backend_api_url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (response.ok) {
-        btn.classList.add('success');
-        btn.textContent = '¡Programado!';
-      } else {
-        throw new Error('Error: ' + response.status);
-      }
+      await this._hass.callService('rest_command', 'programar_apolo', payload);
+      
+      console.log("Programación enviada con éxito al backend de HA");
+      btn.classList.add('success');
+      btn.textContent = '¡Programado!';
     } catch (err) {
-      console.error(err);
+      console.error("Error al programar en Apolo", err);
       btn.classList.add('error');
       btn.textContent = 'Error al programar';
     }
