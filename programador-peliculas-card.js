@@ -468,10 +468,21 @@ class ProgramadorPeliculasCard extends HTMLElement {
       return;
     }
 
+    const rawId = this._selectedItem.media_content_id || "";
+    const cleanId = rawId.replace('media-source://jellyfin/', '');
+    
+    // Ensure the date has seconds for Java's LocalDateTime to parse correctly
+    let safeDate = this._selectedDate;
+    if (safeDate && safeDate.length === 16) {
+      safeDate += ':00';
+    }
+
     const payload = {
-      id: this._selectedItem.media_content_id,
+      id: cleanId,
       nombre: this._selectedItem.title,
-      programacion: this._selectedDate
+      programacion: safeDate,
+      temporada: "",
+      capitulo: ""
     };
 
     if (this._currentTab === 'series') {
