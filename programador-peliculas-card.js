@@ -469,6 +469,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
     }
 
     const payload = {
+      id: this._selectedItem.media_content_id,
       nombre: this._selectedItem.title,
       programacion: this._selectedDate
     };
