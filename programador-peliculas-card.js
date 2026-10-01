@@ -482,7 +482,9 @@ class ProgramadorPeliculasCard extends HTMLElement {
       nombre: this._selectedItem.title,
       programacion: safeDate,
       temporada: "",
-      capitulo: ""
+      capitulo: "",
+      usuario: this._hass.user.name,
+      return_response: true
     };
 
     if (this._currentTab === 'series') {
@@ -496,9 +498,15 @@ class ProgramadorPeliculasCard extends HTMLElement {
     btn.disabled = true;
 
     try {
-      await this._hass.callService('rest_command', 'programar_apolo', payload);
+      const response = await this._hass.callService('rest_command', 'programar_apolo', payload);
       
-      console.log("Programación enviada con éxito al backend de HA");
+      // If the rest_command was successful, it returns a response dictionary. We need to check its status.
+      // If 'response' is undefined, it might be an older HA version, but we assume it works if no exception was thrown.
+      if (response && response.status && (response.status < 200 || response.status >= 300)) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      console.log("Programación enviada con éxito al backend de HA", response);
       btn.classList.add('success');
       btn.textContent = '¡Programado!';
     } catch (err) {
