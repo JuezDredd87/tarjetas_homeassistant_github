@@ -35,7 +35,6 @@ class ProgramadorPeliculasCardEditor extends HTMLElement {
 
     const inputs = this.querySelectorAll('input');
     inputs.forEach(input => {
-      // Usamos input en lugar de change para que guarde en tiempo real
       input.addEventListener('input', this._valueChanged.bind(this));
     });
   }
@@ -66,7 +65,6 @@ class ProgramadorPeliculasCardEditor extends HTMLElement {
     });
     this.dispatchEvent(event);
   }
-
 }
 
 customElements.define("programador-peliculas-card-editor", ProgramadorPeliculasCardEditor);
@@ -80,6 +78,9 @@ class ProgramadorPeliculasCard extends HTMLElement {
     this._searchQuery = '';
     this._loading = false;
     
+    // Estado para vistas
+    this._viewState = 'main'; // 'main', 'detail', 'summary'
+    
     // Estado para la vista detalle
     this._selectedItem = null;
     this._seasons = [];
@@ -88,6 +89,11 @@ class ProgramadorPeliculasCard extends HTMLElement {
     this._selectedEpisode = null;
     this._selectedDate = '';
     this._loadingDetails = false;
+    
+    // Estado para la vista de resumen y cancelacion
+    this._scheduledId = null;
+    this._fetchedSynopsis = '';
+    this._showCancelModal = false;
   }
 
   static getConfigElement() {
@@ -147,6 +153,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
     if (this._currentTab === tab) return;
     this._currentTab = tab;
     this._searchQuery = '';
+    this._viewState = 'main';
     this._selectedItem = null;
     this.fetchMedia();
   }
@@ -159,6 +166,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
     this._selectedEpisode = null;
     this._selectedDate = '';
     this._loadingDetails = false;
+    this._viewState = 'detail';
     
     this.updateUI();
 
@@ -199,6 +207,15 @@ class ProgramadorPeliculasCard extends HTMLElement {
     this.updateUI();
   }
 
+  resetToMain() {
+    this._viewState = 'main';
+    this._selectedItem = null;
+    this._scheduledId = null;
+    this._fetchedSynopsis = '';
+    this._showCancelModal = false;
+    this.updateUI();
+  }
+
   render() {
     if (!this._config) return;
 
@@ -222,13 +239,13 @@ class ProgramadorPeliculasCard extends HTMLElement {
           
           .info-msg, .loader { text-align: center; padding: 20px; color: var(--secondary-text-color); font-style: italic; }
           
-          /* Detail View Styles */
-          #detail-view { display: none; position: relative; min-height: 400px; }
+          /* Detail & Summary View Styles */
+          #detail-view, #summary-view { display: none; position: relative; min-height: 400px; }
           .back-btn { background: var(--secondary-background-color); color: var(--primary-text-color); border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-bottom: 16px; font-weight: bold; z-index: 2; position: relative; transition: background 0.2s; }
           .back-btn:hover { background: var(--divider-color); }
           
-          .detail-content { display: flex; flex-direction: column; gap: 16px; position: relative; z-index: 2; }
-          @media (min-width: 500px) { .detail-content { flex-direction: row; } }
+          .detail-content, .summary-content { display: flex; flex-direction: column; gap: 16px; position: relative; z-index: 2; }
+          @media (min-width: 500px) { .detail-content, .summary-content { flex-direction: row; } }
           
           .detail-poster-large { width: 100%; max-width: 200px; flex-shrink: 0; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); overflow: hidden; align-self: flex-start; }
           .detail-poster-large hui-image { width: 100%; display: block; }
@@ -237,7 +254,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
           .detail-title-large { font-size: 20px; font-weight: bold; margin-bottom: 12px; line-height: 1.2; }
           .detail-synopsis { font-size: 14px; margin-bottom: 20px; line-height: 1.5; opacity: 0.9; }
           
-          .detail-bg { position: absolute; top: -16px; left: -16px; right: -16px; bottom: -16px; opacity: 0.3; filter: blur(20px); z-index: 1; overflow: hidden; }
+          .detail-bg { position: absolute; top: -16px; left: -16px; right: -16px; bottom: -16px; opacity: 0.3; filter: blur(20px); z-index: 1; overflow: hidden; pointer-events: none; }
           .detail-bg hui-image { width: 100%; height: 100%; }
           
           .form-group { margin-bottom: 12px; }
@@ -248,6 +265,26 @@ class ProgramadorPeliculasCard extends HTMLElement {
           .btn-programar:disabled { opacity: 0.7; cursor: not-allowed; }
           .btn-programar.success { background: #4caf50 !important; }
           .btn-programar.error { background: #f44336 !important; }
+
+          /* Summary screen specific styles */
+          .summary-schedule-info { margin-top: 20px; padding: 12px; background: var(--secondary-background-color); border-radius: 8px; font-size: 14px; }
+          .summary-schedule-info p { margin: 4px 0; }
+          .summary-actions { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+          .summary-actions button { flex: 1; padding: 10px; border: none; border-radius: 4px; font-size: 14px; font-weight: bold; cursor: pointer; transition: opacity 0.2s; min-width: 80px; }
+          .summary-actions button:hover { opacity: 0.9; }
+          .btn-accept { background: var(--primary-color); color: white; }
+          .btn-edit { background: #2196F3; color: white; }
+          .btn-cancel { background: #f44336; color: white; }
+
+          /* Modal styles */
+          .modal-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 10; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px); border-radius: var(--ha-card-border-radius, 12px); }
+          .modal-content { background: var(--card-background-color); padding: 24px; border-radius: 8px; text-align: center; max-width: 300px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+          .modal-content h3 { margin-top: 0; margin-bottom: 12px; color: var(--primary-text-color); }
+          .modal-content p { margin-bottom: 24px; color: var(--secondary-text-color); }
+          .modal-actions { display: flex; gap: 12px; justify-content: center; }
+          .modal-actions button { padding: 10px 24px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+          .btn-modal-no { background: var(--secondary-background-color); color: var(--primary-text-color); }
+          .btn-modal-yes { background: #f44336; color: white; }
         </style>
         
         <ha-card header="Biblioteca Multimedia">
@@ -264,6 +301,18 @@ class ProgramadorPeliculasCard extends HTMLElement {
             </div>
             
             <div id="detail-view"></div>
+            <div id="summary-view"></div>
+            
+            <div id="cancel-modal" class="modal-overlay" style="display: none;">
+              <div class="modal-content">
+                <h3>¿Cancelar programación?</h3>
+                <p>La programación será eliminada.</p>
+                <div class="modal-actions">
+                  <button class="btn-modal-no" id="btn-modal-no">No</button>
+                  <button class="btn-modal-yes" id="btn-modal-yes">Sí, cancelar</button>
+                </div>
+              </div>
+            </div>
           </div>
         </ha-card>
       `;
@@ -285,6 +334,13 @@ class ProgramadorPeliculasCard extends HTMLElement {
           if (item) this.selectItem(item);
         }
       });
+
+      this.shadowRoot.getElementById('btn-modal-no').addEventListener('click', () => {
+        this._showCancelModal = false;
+        this.updateUI();
+      });
+
+      this.shadowRoot.getElementById('btn-modal-yes').addEventListener('click', () => this.handleCancelarConfirmado());
     }
 
     this.updateUI();
@@ -294,14 +350,25 @@ class ProgramadorPeliculasCard extends HTMLElement {
     if (!this.shadowRoot.querySelector('.card-container')) return;
     const mainView = this.shadowRoot.getElementById('main-view');
     const detailView = this.shadowRoot.getElementById('detail-view');
+    const summaryView = this.shadowRoot.getElementById('summary-view');
+    const cancelModal = this.shadowRoot.getElementById('cancel-modal');
     
-    if (this._selectedItem) {
+    cancelModal.style.display = this._showCancelModal ? 'flex' : 'none';
+
+    if (this._viewState === 'detail') {
       mainView.style.display = 'none';
+      summaryView.style.display = 'none';
       detailView.style.display = 'block';
       this.renderDetailView(detailView);
+    } else if (this._viewState === 'summary') {
+      mainView.style.display = 'none';
+      detailView.style.display = 'none';
+      summaryView.style.display = 'block';
+      this.renderSummaryView(summaryView);
     } else {
       mainView.style.display = 'block';
       detailView.style.display = 'none';
+      summaryView.style.display = 'none';
       this.updateGrid();
     }
   }
@@ -407,7 +474,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
       <button class="btn-programar" id="btn-programar">Programar</button>
     `;
 
-    const synopsis = item.summary || item.description || "Sinopsis no disponible en la respuesta de la integración.";
+    const basicSynopsis = item.summary || item.description || "Ingresa fecha y hora para programar el visionado.";
 
     container.innerHTML = `
       <div class="detail-bg">
@@ -420,7 +487,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
         </div>
         <div class="detail-info">
           <div class="detail-title-large">${item.title}</div>
-          <div class="detail-synopsis">${synopsis}</div>
+          <div class="detail-synopsis">${basicSynopsis}</div>
           ${formHtml}
         </div>
       </div>
@@ -429,8 +496,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
     container.querySelectorAll('hui-image').forEach(img => { img.hass = this._hass; });
 
     container.querySelector('#btn-back').addEventListener('click', () => {
-      this._selectedItem = null;
-      this.updateUI();
+      this.resetToMain();
     });
 
     if (this._currentTab === 'series') {
@@ -454,6 +520,70 @@ class ProgramadorPeliculasCard extends HTMLElement {
     });
 
     container.querySelector('#btn-programar').addEventListener('click', () => this.handleProgramar());
+  }
+
+  renderSummaryView(container) {
+    const item = this._selectedItem;
+    if (!item) return;
+
+    let scheduleInfoHtml = '';
+    if (this._currentTab === 'series') {
+      const seasonObj = this._seasons.find(s => s.media_content_id === this._selectedSeason);
+      const episodeObj = this._episodes.find(e => e.media_content_id === this._selectedEpisode);
+      const sTitle = seasonObj ? seasonObj.title : this._selectedSeason;
+      const eTitle = episodeObj ? episodeObj.title : this._selectedEpisode;
+      scheduleInfoHtml += `<p><strong>Episodio:</strong> ${sTitle} - ${eTitle}</p>`;
+    }
+
+    let displayDate = this._selectedDate.replace('T', ' ');
+    if (displayDate) {
+      scheduleInfoHtml += `<p><strong>Programado para:</strong> ${displayDate}</p>`;
+    }
+    
+    // Si la API falla al traer la sinopsis, usamos el texto de Jellyfin como fallback
+    const synopsisToDisplay = this._fetchedSynopsis || item.summary || item.description || "Sinopsis no disponible.";
+
+    container.innerHTML = `
+      <div class="detail-bg">
+        ${item.thumbnail ? `<hui-image image="${item.thumbnail}"></hui-image>` : ''}
+      </div>
+      <div class="summary-content">
+        <div class="detail-poster-large">
+          ${item.thumbnail ? `<hui-image image="${item.thumbnail}"></hui-image>` : ''}
+        </div>
+        <div class="detail-info">
+          <div class="detail-title-large">¡Programado con éxito!</div>
+          <div style="font-weight: bold; font-size: 16px; margin-bottom: 8px;">${item.title}</div>
+          <div class="detail-synopsis" style="max-height: 150px; overflow-y: auto;">${synopsisToDisplay}</div>
+          
+          <div class="summary-schedule-info">
+            ${scheduleInfoHtml}
+          </div>
+          
+          <div class="summary-actions">
+            <button class="btn-accept" id="btn-summary-accept">Aceptar</button>
+            <button class="btn-edit" id="btn-summary-edit">Editar</button>
+            <button class="btn-cancel" id="btn-summary-cancel">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    container.querySelectorAll('hui-image').forEach(img => { img.hass = this._hass; });
+
+    container.querySelector('#btn-summary-accept').addEventListener('click', () => {
+      this.resetToMain();
+    });
+    
+    container.querySelector('#btn-summary-edit').addEventListener('click', () => {
+      this._viewState = 'detail';
+      this.updateUI();
+    });
+
+    container.querySelector('#btn-summary-cancel').addEventListener('click', () => {
+      this._showCancelModal = true;
+      this.updateUI();
+    });
   }
 
   async handleProgramar() {
@@ -494,32 +624,81 @@ class ProgramadorPeliculasCard extends HTMLElement {
       payload.capitulo = episodeObj ? episodeObj.title : this._selectedEpisode;
     }
 
-    btn.textContent = 'Enviando...';
+    btn.textContent = 'Programando...';
     btn.disabled = true;
 
     try {
+      // 1. Programar la película o serie
       const response = await this._hass.callService('rest_command', 'programar_apolo', payload);
       
-      // If the rest_command was successful, it returns a response dictionary. We need to check its status.
-      // If 'response' is undefined, it might be an older HA version, but we assume it works if no exception was thrown.
       if (response && response.status && (response.status < 200 || response.status >= 300)) {
         throw new Error(`API error: ${response.status}`);
       }
+      
+      // Parsear la respuesta para obtener el ID de la programación
+      if (response && response.content) {
+        try {
+          const parsed = JSON.parse(response.content);
+          this._scheduledId = parsed.id;
+        } catch (e) {
+          console.warn("No se pudo parsear el ID del schedule", e);
+        }
+      }
 
-      console.log("Programación enviada con éxito al backend de HA", response);
-      btn.classList.add('success');
-      btn.textContent = '¡Programado!';
+      // 2. Obtener la sinopsis usando el nuevo endpoint
+      btn.textContent = 'Obteniendo sinopsis...';
+      try {
+        const synResp = await this._hass.callService('rest_command', 'obtener_sinopsis_apolo', { 
+          media_id: cleanId,
+          return_response: true
+        });
+        
+        if (synResp && synResp.content) {
+          const parsedSyn = JSON.parse(synResp.content);
+          this._fetchedSynopsis = parsedSyn.synopsis || "";
+        }
+      } catch (errSyn) {
+        console.warn("Fallo al obtener la sinopsis (no crítico)", errSyn);
+        this._fetchedSynopsis = "";
+      }
+
+      // 3. Cambiar a vista de resumen
+      this._viewState = 'summary';
+      this.updateUI();
+
     } catch (err) {
       console.error("Error al programar en Apolo", err);
       btn.classList.add('error');
       btn.textContent = 'Error al programar';
+      
+      setTimeout(() => {
+        btn.classList.remove('success', 'error');
+        btn.textContent = 'Programar';
+        btn.disabled = false;
+      }, 3000);
     }
+  }
 
-    setTimeout(() => {
-      btn.classList.remove('success', 'error');
-      btn.textContent = 'Programar';
-      btn.disabled = false;
-    }, 3000);
+  async handleCancelarConfirmado() {
+    this._showCancelModal = false;
+    
+    if (this._scheduledId) {
+      try {
+        await this._hass.callService('rest_command', 'cancelar_programacion_apolo', { 
+          schedule_id: this._scheduledId,
+          return_response: true 
+        });
+        console.log("Programación cancelada exitosamente");
+      } catch(err) {
+        console.error("Error al cancelar la programación", err);
+        alert("Hubo un error al intentar cancelar la programación en el servidor.");
+      }
+    } else {
+      console.warn("No hay ID de programación para cancelar.");
+    }
+    
+    // Volver a la pantalla inicial en cualquier caso (asumimos que el usuario no la quiere)
+    this.resetToMain();
   }
 
   getCardSize() {
