@@ -129,11 +129,14 @@ class ProgramadorPeliculasCard extends HTMLElement {
     this._loading = true;
     this.updateUI();
 
+    const tabAtRequest = this._currentTab;
     const folderId = this._currentTab === 'movies' ? this._config.movies_folder_id : this._config.series_folder_id;
     if (!folderId) {
-      this._mediaItems = [];
-      this._loading = false;
-      this.updateUI();
+      if (this._currentTab === tabAtRequest) {
+        this._mediaItems = [];
+        this._loading = false;
+        this.updateUI();
+      }
       return;
     }
 
@@ -143,13 +146,20 @@ class ProgramadorPeliculasCard extends HTMLElement {
         type: 'media_source/browse_media',
         media_content_id: formattedId
       });
-      this._mediaItems = response.children || [];
+      if (this._currentTab === tabAtRequest) {
+        this._mediaItems = response.children || [];
+      }
     } catch (err) {
-      console.error("Error al obtener la biblioteca multimedia:", err);
-      this._mediaItems = [];
+      if (this._currentTab === tabAtRequest) {
+        console.error("Error al obtener la biblioteca multimedia:", err);
+        this._mediaItems = [];
+      }
     }
-    this._loading = false;
-    this.updateUI();
+    
+    if (this._currentTab === tabAtRequest) {
+      this._loading = false;
+      this.updateUI();
+    }
   }
 
   switchTab(tab) {
