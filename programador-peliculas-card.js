@@ -93,6 +93,8 @@ class ProgramadorPeliculasCard extends HTMLElement {
     // Estado para la vista de resumen y cancelacion
     this._scheduledId = null;
     this._fetchedSynopsis = '';
+    this._seriesSynopsis = '';
+    this._episodeSynopsis = '';
     this._showCancelModal = false;
   }
 
@@ -166,9 +168,15 @@ class ProgramadorPeliculasCard extends HTMLElement {
     this._selectedEpisode = null;
     this._selectedDate = '';
     this._loadingDetails = false;
+    this._seriesSynopsis = '';
+    this._episodeSynopsis = '';
     this._viewState = 'detail';
     
     this.updateUI();
+
+    const rawId = item.media_content_id || "";
+    const cleanId = rawId.replace('media-source://jellyfin/', '');
+    this.fetchSeriesSynopsis(cleanId);
 
     if (this._currentTab === 'series') {
       this._loadingDetails = true;
@@ -205,6 +213,47 @@ class ProgramadorPeliculasCard extends HTMLElement {
     }
     this._loadingDetails = false;
     this.updateUI();
+  }
+
+  async fetchSeriesSynopsis(mediaId) {
+    try {
+      const synResp = await this._hass.callService('rest_command', 'obtener_sinopsis_apolo', { 
+        media_id: mediaId, return_response: true 
+      });
+      if (synResp && synResp.content) {
+        const parsed = JSON.parse(synResp.content);
+        this._seriesSynopsis = parsed.synopsis || "";
+        
+        const el = this.shadowRoot.getElementById('series-synopsis');
+        if (el && this._seriesSynopsis) {
+          el.innerHTML = this._seriesSynopsis;
+        }
+      }
+    } catch(e) {}
+  }
+
+  async fetchEpisodeSynopsis(episodeId) {
+    this._episodeSynopsis = '';
+    try {
+      const cleanId = episodeId.replace('media-source://jellyfin/', '');
+      const synResp = await this._hass.callService('rest_command', 'obtener_sinopsis_apolo', { 
+        media_id: cleanId, return_response: true 
+      });
+      if (synResp && synResp.content) {
+        const parsed = JSON.parse(synResp.content);
+        this._episodeSynopsis = parsed.synopsis || "";
+        
+        const el = this.shadowRoot.getElementById('episode-synopsis');
+        if (el) {
+          if (this._episodeSynopsis) {
+            el.innerHTML = `<strong>Sinopsis del capítulo:</strong><br>${this._episodeSynopsis}`;
+            el.style.display = 'block';
+          } else {
+            el.style.display = 'none';
+          }
+        }
+      }
+    } catch(e) {}
   }
 
   resetToMain() {
@@ -474,7 +523,9 @@ class ProgramadorPeliculasCard extends HTMLElement {
       <button class="btn-programar" id="btn-programar">Programar</button>
     `;
 
-    const basicSynopsis = item.summary || item.description || "Ingresa fecha y hora para programar el visionado.";
+    const basicSynopsis = this._seriesSynopsis || item.summary || item.description || "Sinopsis no disponible.";
+    const epSynDisplay = this._episodeSynopsis ? 'block' : 'none';
+    const epSynHtml = this._episodeSynopsis ? `<strong>Sinopsis del capítulo:</strong><br>${this._episodeSynopsis}` : '';
 
     container.innerHTML = `
       <div class="detail-bg">
@@ -487,7 +538,10 @@ class ProgramadorPeliculasCard extends HTMLElement {
         </div>
         <div class="detail-info">
           <div class="detail-title-large">${item.title}</div>
-          <div class="detail-synopsis">${basicSynopsis}</div>
+          <div class="detail-synopsis" id="detail-synopsis-container">
+            <div id="series-synopsis">${basicSynopsis}</div>
+            <div id="episode-synopsis" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--divider-color); display: ${epSynDisplay};">${epSynHtml}</div>
+          </div>
           ${formHtml}
         </div>
       </div>
@@ -512,6 +566,13 @@ class ProgramadorPeliculasCard extends HTMLElement {
       });
       container.querySelector('#select-episode').addEventListener('change', (e) => {
         this._selectedEpisode = e.target.value;
+        if (this._selectedEpisode) {
+          this.fetchEpisodeSynopsis(this._selectedEpisode);
+        } else {
+          this._episodeSynopsis = '';
+          const el = this.shadowRoot.getElementById('episode-synopsis');
+          if (el) el.style.display = 'none';
+        }
       });
     }
 
