@@ -96,6 +96,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
     this._seriesSynopsis = '';
     this._episodeSynopsis = '';
     this._showCancelModal = false;
+    this._schedules = [];
   }
 
   static getConfigElement() {
@@ -347,6 +348,9 @@ class ProgramadorPeliculasCard extends HTMLElement {
         </style>
         
         <ha-card header="Biblioteca Multimedia">
+          <div class="header-actions" style="position:absolute; top: 16px; right: 16px; z-index: 10;">
+            <button class="btn-icon" id="btn-manage-schedules" title="Gestionar Programaciones" style="background:none; border:none; font-size:24px; cursor:pointer; padding: 4px; border-radius: 50%;">⚙️</button>
+          </div>
           <div class="card-container">
             <div id="main-view">
               <div class="tabs">
@@ -361,6 +365,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
             
             <div id="detail-view"></div>
             <div id="summary-view"></div>
+            <div id="crud-view"></div>
             
             <div id="cancel-modal" class="modal-overlay" style="display: none;">
               <div class="modal-content">
@@ -400,6 +405,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
       });
 
       this.shadowRoot.getElementById('btn-modal-yes').addEventListener('click', () => this.handleCancelarConfirmado());
+      this.shadowRoot.getElementById('btn-manage-schedules').addEventListener('click', () => this.fetchSchedules());
     }
 
     this.updateUI();
@@ -410,6 +416,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
     const mainView = this.shadowRoot.getElementById('main-view');
     const detailView = this.shadowRoot.getElementById('detail-view');
     const summaryView = this.shadowRoot.getElementById('summary-view');
+    const crudView = this.shadowRoot.getElementById('crud-view');
     const cancelModal = this.shadowRoot.getElementById('cancel-modal');
     
     cancelModal.style.display = this._showCancelModal ? 'flex' : 'none';
@@ -417,17 +424,26 @@ class ProgramadorPeliculasCard extends HTMLElement {
     if (this._viewState === 'detail') {
       mainView.style.display = 'none';
       summaryView.style.display = 'none';
+      crudView.style.display = 'none';
       detailView.style.display = 'block';
       this.renderDetailView(detailView);
     } else if (this._viewState === 'summary') {
       mainView.style.display = 'none';
       detailView.style.display = 'none';
+      crudView.style.display = 'none';
       summaryView.style.display = 'block';
       this.renderSummaryView(summaryView);
+    } else if (this._viewState === 'crud') {
+      mainView.style.display = 'none';
+      detailView.style.display = 'none';
+      summaryView.style.display = 'none';
+      crudView.style.display = 'block';
+      this.renderCrudView(crudView);
     } else {
       mainView.style.display = 'block';
       detailView.style.display = 'none';
       summaryView.style.display = 'none';
+      crudView.style.display = 'none';
       this.updateGrid();
     }
   }
@@ -784,6 +800,157 @@ class ProgramadorPeliculasCard extends HTMLElement {
     
     // Volver a la pantalla inicial en cualquier caso (asumimos que el usuario no la quiere)
     this.resetToMain();
+  }
+
+  async fetchSchedules() {
+    this._viewState = 'crud';
+    this._schedules = [];
+    this.updateUI(); // Shows empty/loading initially
+
+    try {
+      const res = await this._hass.callWS({
+        type: 'call_service',
+        domain: 'rest_command',
+        service: 'obtener_programaciones_apolo',
+        service_data: {},
+        return_response: true
+      });
+      const response = res && res.response ? res.response : res;
+      if (response && response.content) {
+        const parsed = typeof response.content === 'string' ? JSON.parse(response.content) : response.content;
+        this._schedules = Array.isArray(parsed) ? parsed : [];
+      }
+    } catch (err) {
+      console.error("Error al obtener programaciones", err);
+    }
+    
+    this.updateUI();
+  }
+
+  renderCrudView(container) {
+    let listHtml = '';
+    
+    if (this._schedules.length === 0) {
+      listHtml = '<div class="info-msg">No hay programaciones o se están cargando...</div>';
+    } else {
+      listHtml = this._schedules.map(sch => {
+        const title = sch.season && sch.episode ? `${sch.mediaName} - ${sch.season} ${sch.episode}` : sch.mediaName;
+        // Format date string from backend (e.g. 2026-10-02T20:00:00)
+        let dateVal = sch.scheduledDate ? sch.scheduledDate.substring(0, 16) : '';
+        
+        return `
+          <div class="schedule-row" style="background: rgba(var(--rgb-card-background-color, 30, 30, 30), 0.85); padding: 12px; border-radius: 8px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--divider-color);">
+            <div style="font-weight: bold; font-size: 15px; color: var(--primary-text-color);">${title}</div>
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+              <input type="datetime-local" id="date-${sch.id}" value="${dateVal}" style="flex: 1; min-width: 200px; padding: 8px; border-radius: 4px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color);">
+              <button class="btn-edit-sch" data-id="${sch.id}" style="padding: 8px 12px; border-radius: 4px; border: none; background: #2196F3; color: white; font-weight: bold; cursor: pointer; transition: opacity 0.2s;">Guardar</button>
+              <button class="btn-cancel-sch" data-id="${sch.id}" style="padding: 8px 12px; border-radius: 4px; border: none; background: #f44336; color: white; font-weight: bold; cursor: pointer; transition: opacity 0.2s;">Borrar</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    container.innerHTML = `
+      <button class="back-btn" id="btn-back-crud" style="margin-bottom: 20px;">⬅ Volver</button>
+      <h3 style="margin-top:0; margin-bottom: 16px; color: var(--primary-text-color); font-size: 20px;">Mis Programaciones</h3>
+      <div class="schedules-list" style="max-height: 500px; overflow-y: auto; padding-right: 8px;">
+        ${listHtml}
+      </div>
+    `;
+
+    container.querySelector('#btn-back-crud').addEventListener('click', () => {
+      this.resetToMain();
+    });
+
+    container.querySelectorAll('.btn-edit-sch').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const id = e.target.dataset.id;
+        const dateInput = container.querySelector(`#date-${id}`);
+        this.handleEditSchedule(id, dateInput.value, e.target);
+      });
+    });
+
+    container.querySelectorAll('.btn-cancel-sch').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const id = e.target.dataset.id;
+        if (confirm("¿Estás seguro de que quieres borrar esta programación?")) {
+          this.handleDeleteSchedule(id, e.target);
+        }
+      });
+    });
+  }
+
+  async handleEditSchedule(id, newDate, btnElement) {
+    if (!newDate) return;
+    
+    let safeDate = newDate;
+    if (safeDate.length === 16) {
+      safeDate += ':00';
+    }
+    
+    const originalText = btnElement.textContent;
+    btnElement.textContent = '...';
+    btnElement.disabled = true;
+
+    try {
+      await this._hass.callWS({
+        type: 'call_service',
+        domain: 'rest_command',
+        service: 'actualizar_programacion_apolo',
+        service_data: { schedule_id: id, programacion: safeDate },
+        return_response: true
+      });
+      
+      btnElement.style.background = '#4caf50';
+      btnElement.textContent = 'OK';
+      
+      // Update local state
+      const sch = this._schedules.find(s => s.id === id);
+      if (sch) sch.scheduledDate = safeDate;
+
+      setTimeout(() => {
+        btnElement.style.background = '#2196F3';
+        btnElement.textContent = originalText;
+        btnElement.disabled = false;
+      }, 2000);
+    } catch(err) {
+      console.error("Error updating schedule", err);
+      btnElement.style.background = '#f44336';
+      btnElement.textContent = 'Error';
+      setTimeout(() => {
+        btnElement.style.background = '#2196F3';
+        btnElement.textContent = originalText;
+        btnElement.disabled = false;
+      }, 2000);
+    }
+  }
+
+  async handleDeleteSchedule(id, btnElement) {
+    const originalText = btnElement.textContent;
+    btnElement.textContent = '...';
+    btnElement.disabled = true;
+
+    try {
+      await this._hass.callWS({
+        type: 'call_service',
+        domain: 'rest_command',
+        service: 'cancelar_programacion_apolo',
+        service_data: { schedule_id: id },
+        return_response: true
+      });
+      
+      this._schedules = this._schedules.filter(s => s.id !== id);
+      this.renderCrudView(this.shadowRoot.getElementById('crud-view'));
+      
+    } catch(err) {
+      console.error("Error deleting schedule", err);
+      btnElement.textContent = 'Error';
+      setTimeout(() => {
+        btnElement.textContent = originalText;
+        btnElement.disabled = false;
+      }, 2000);
+    }
   }
 
   getCardSize() {
