@@ -217,11 +217,16 @@ class ProgramadorPeliculasCard extends HTMLElement {
 
   async fetchSeriesSynopsis(mediaId) {
     try {
-      const synResp = await this._hass.callService('rest_command', 'obtener_sinopsis_apolo', { 
-        media_id: mediaId, return_response: true 
+      const res = await this._hass.callWS({
+        type: 'call_service',
+        domain: 'rest_command',
+        service: 'obtener_sinopsis_apolo',
+        service_data: { media_id: mediaId },
+        return_response: true
       });
+      const synResp = res && res.response ? res.response : res;
       if (synResp && synResp.content) {
-        const parsed = JSON.parse(synResp.content);
+        const parsed = typeof synResp.content === 'string' ? JSON.parse(synResp.content) : synResp.content;
         this._seriesSynopsis = parsed.synopsis || "";
         
         const el = this.shadowRoot.getElementById('series-synopsis');
@@ -236,11 +241,16 @@ class ProgramadorPeliculasCard extends HTMLElement {
     this._episodeSynopsis = '';
     try {
       const cleanId = episodeId.replace('media-source://jellyfin/', '');
-      const synResp = await this._hass.callService('rest_command', 'obtener_sinopsis_apolo', { 
-        media_id: cleanId, return_response: true 
+      const res = await this._hass.callWS({
+        type: 'call_service',
+        domain: 'rest_command',
+        service: 'obtener_sinopsis_apolo',
+        service_data: { media_id: cleanId },
+        return_response: true
       });
+      const synResp = res && res.response ? res.response : res;
       if (synResp && synResp.content) {
-        const parsed = JSON.parse(synResp.content);
+        const parsed = typeof synResp.content === 'string' ? JSON.parse(synResp.content) : synResp.content;
         this._episodeSynopsis = parsed.synopsis || "";
         
         const el = this.shadowRoot.getElementById('episode-synopsis');
@@ -690,7 +700,14 @@ class ProgramadorPeliculasCard extends HTMLElement {
 
     try {
       // 1. Programar la película o serie
-      const response = await this._hass.callService('rest_command', 'programar_apolo', payload);
+      const res = await this._hass.callWS({
+        type: 'call_service',
+        domain: 'rest_command',
+        service: 'programar_apolo',
+        service_data: payload,
+        return_response: true
+      });
+      const response = res && res.response ? res.response : res;
       
       if (response && response.status && (response.status < 200 || response.status >= 300)) {
         throw new Error(`API error: ${response.status}`);
@@ -699,7 +716,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
       // Parsear la respuesta para obtener el ID de la programación
       if (response && response.content) {
         try {
-          const parsed = JSON.parse(response.content);
+          const parsed = typeof response.content === 'string' ? JSON.parse(response.content) : response.content;
           this._scheduledId = parsed.id;
         } catch (e) {
           console.warn("No se pudo parsear el ID del schedule", e);
@@ -709,13 +726,17 @@ class ProgramadorPeliculasCard extends HTMLElement {
       // 2. Obtener la sinopsis usando el nuevo endpoint
       btn.textContent = 'Obteniendo sinopsis...';
       try {
-        const synResp = await this._hass.callService('rest_command', 'obtener_sinopsis_apolo', { 
-          media_id: cleanId,
+        const synRes = await this._hass.callWS({
+          type: 'call_service',
+          domain: 'rest_command',
+          service: 'obtener_sinopsis_apolo',
+          service_data: { media_id: cleanId },
           return_response: true
         });
+        const synResp = synRes && synRes.response ? synRes.response : synRes;
         
         if (synResp && synResp.content) {
-          const parsedSyn = JSON.parse(synResp.content);
+          const parsedSyn = typeof synResp.content === 'string' ? JSON.parse(synResp.content) : synResp.content;
           this._fetchedSynopsis = parsedSyn.synopsis || "";
         }
       } catch (errSyn) {
@@ -745,9 +766,12 @@ class ProgramadorPeliculasCard extends HTMLElement {
     
     if (this._scheduledId) {
       try {
-        await this._hass.callService('rest_command', 'cancelar_programacion_apolo', { 
-          schedule_id: this._scheduledId,
-          return_response: true 
+        await this._hass.callWS({
+          type: 'call_service',
+          domain: 'rest_command',
+          service: 'cancelar_programacion_apolo',
+          service_data: { schedule_id: this._scheduledId },
+          return_response: true
         });
         console.log("Programación cancelada exitosamente");
       } catch(err) {
