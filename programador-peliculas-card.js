@@ -355,6 +355,19 @@ class ProgramadorPeliculasCard extends HTMLElement {
           .modal-actions button { padding: 10px 24px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
           .btn-modal-no { background: var(--secondary-background-color); color: var(--primary-text-color); }
           .btn-modal-yes { background: #f44336; color: white; }
+
+          /* Settings Menu */
+          .settings-menu { display: flex; flex-direction: column; gap: 16px; align-items: center; justify-content: center; padding: 20px 0; }
+          .settings-card { width: 100%; max-width: 300px; padding: 20px; background: var(--secondary-background-color); border-radius: 12px; border: 1px solid var(--divider-color); cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+          .settings-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-color: var(--primary-color); }
+          .settings-card-icon { font-size: 32px; }
+          .settings-card-title { font-size: 18px; font-weight: bold; color: var(--primary-text-color); }
+          
+          /* Prompt Poster Editor */
+          .prompt-editor-textarea { width: 100%; min-height: 350px; padding: 12px; background: var(--secondary-background-color); color: var(--primary-text-color); border: 1px solid var(--divider-color); border-radius: 8px; font-family: monospace; font-size: 13px; line-height: 1.4; resize: vertical; margin-bottom: 16px; box-sizing: border-box;}
+          .placeholders-container { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; padding: 12px; background: var(--secondary-background-color); border-radius: 8px; max-height: 150px; overflow-y: auto; }
+          .placeholder-pill { background: var(--primary-color); color: white; padding: 4px 10px; border-radius: 16px; font-size: 12px; cursor: pointer; transition: opacity 0.2s; user-select: none; }
+          .placeholder-pill:hover { opacity: 0.8; }
         </style>
         
         <ha-card header="Biblioteca Multimedia">
@@ -376,6 +389,8 @@ class ProgramadorPeliculasCard extends HTMLElement {
             <div id="detail-view"></div>
             <div id="summary-view"></div>
             <div id="crud-view"></div>
+            <div id="settings-menu-view"></div>
+            <div id="prompt-poster-view"></div>
             
             <div id="cancel-modal" class="modal-overlay" style="display: none;">
               <div class="modal-content">
@@ -415,7 +430,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
       });
 
       this.shadowRoot.getElementById('btn-modal-yes').addEventListener('click', () => this.handleCancelarConfirmado());
-      this.shadowRoot.getElementById('btn-manage-schedules').addEventListener('click', () => this.fetchSchedules());
+      this.shadowRoot.getElementById('btn-manage-schedules').addEventListener('click', () => this.openSettingsMenu());
     }
 
     this.updateUI();
@@ -427,33 +442,34 @@ class ProgramadorPeliculasCard extends HTMLElement {
     const detailView = this.shadowRoot.getElementById('detail-view');
     const summaryView = this.shadowRoot.getElementById('summary-view');
     const crudView = this.shadowRoot.getElementById('crud-view');
+    const settingsView = this.shadowRoot.getElementById('settings-menu-view');
+    const promptView = this.shadowRoot.getElementById('prompt-poster-view');
     const cancelModal = this.shadowRoot.getElementById('cancel-modal');
     
     cancelModal.style.display = this._showCancelModal ? 'flex' : 'none';
 
+    mainView.style.display = 'none';
+    detailView.style.display = 'none';
+    summaryView.style.display = 'none';
+    crudView.style.display = 'none';
+    if(settingsView) settingsView.style.display = 'none';
+    if(promptView) promptView.style.display = 'none';
+
     if (this._viewState === 'detail') {
-      mainView.style.display = 'none';
-      summaryView.style.display = 'none';
-      crudView.style.display = 'none';
       detailView.style.display = 'block';
       this.renderDetailView(detailView);
     } else if (this._viewState === 'summary') {
-      mainView.style.display = 'none';
-      detailView.style.display = 'none';
-      crudView.style.display = 'none';
       summaryView.style.display = 'block';
       this.renderSummaryView(summaryView);
     } else if (this._viewState === 'crud') {
-      mainView.style.display = 'none';
-      detailView.style.display = 'none';
-      summaryView.style.display = 'none';
       crudView.style.display = 'block';
       this.renderCrudView(crudView);
+    } else if (this._viewState === 'settings_menu') {
+      if(settingsView) { settingsView.style.display = 'block'; this.renderSettingsMenu(settingsView); }
+    } else if (this._viewState === 'prompt_poster') {
+      if(promptView) { promptView.style.display = 'block'; this.renderPromptPoster(promptView); }
     } else {
       mainView.style.display = 'block';
-      detailView.style.display = 'none';
-      summaryView.style.display = 'none';
-      crudView.style.display = 'none';
       this.updateGrid();
     }
   }
@@ -776,6 +792,173 @@ class ProgramadorPeliculasCard extends HTMLElement {
       btn.textContent = 'Aceptar';
       btn.disabled = false;
     }
+  }
+
+  openSettingsMenu() {
+    this._viewState = 'settings_menu';
+    this.updateUI();
+  }
+
+  renderSettingsMenu(container) {
+    container.innerHTML = `
+      <div style="margin-bottom: 20px;">
+        <button class="btn-back" style="background:none; border:none; color:var(--primary-color); cursor:pointer; font-size:14px; font-weight:bold;">
+          ← Volver al Menú Principal
+        </button>
+      </div>
+      <div class="settings-menu">
+        <div class="settings-card" id="btn-menu-programaciones">
+          <div class="settings-card-icon">📅</div>
+          <div class="settings-card-title">Programaciones</div>
+        </div>
+        <div class="settings-card" id="btn-menu-prompt">
+          <div class="settings-card-icon">📝</div>
+          <div class="settings-card-title">Prompt Poster</div>
+        </div>
+      </div>
+    `;
+
+    container.querySelector('.btn-back').addEventListener('click', () => {
+      this.resetToMain();
+    });
+    container.querySelector('#btn-menu-programaciones').addEventListener('click', () => {
+      this.fetchSchedules();
+    });
+    container.querySelector('#btn-menu-prompt').addEventListener('click', () => {
+      this.fetchPromptPoster();
+    });
+  }
+
+  async fetchPromptPoster() {
+    this._viewState = 'prompt_poster';
+    this._promptData = null;
+    this._placeholders = [];
+    this.updateUI();
+    
+    try {
+      const promptRes = await this._hass.callWS({
+        type: 'call_service',
+        domain: 'rest_command',
+        service: 'obtener_prompt_apolo',
+        service_data: {},
+        return_response: true
+      });
+      const promptResponse = promptRes && promptRes.response ? promptRes.response : promptRes;
+      if (promptResponse && promptResponse.content) {
+        this._promptData = typeof promptResponse.content === 'string' ? JSON.parse(promptResponse.content) : promptResponse.content;
+      }
+
+      const phRes = await this._hass.callWS({
+        type: 'call_service',
+        domain: 'rest_command',
+        service: 'obtener_placeholders_apolo',
+        service_data: {},
+        return_response: true
+      });
+      const phResponse = phRes && phRes.response ? phRes.response : phRes;
+      if (phResponse && phResponse.content) {
+        this._placeholders = typeof phResponse.content === 'string' ? JSON.parse(phResponse.content) : phResponse.content;
+      }
+    } catch (err) {
+      console.error("Error fetching prompt data:", err);
+    }
+    
+    this.updateUI();
+  }
+
+  renderPromptPoster(container) {
+    if (!this._promptData) {
+      container.innerHTML = `
+        <div style="margin-bottom: 20px;">
+          <button class="btn-back" style="background:none; border:none; color:var(--primary-color); cursor:pointer; font-size:14px; font-weight:bold;">
+            ← Volver a Ajustes
+          </button>
+        </div>
+        <div style="text-align:center; padding: 40px; color: var(--secondary-text-color);">
+          Cargando datos del prompt...
+        </div>
+      `;
+      container.querySelector('.btn-back').addEventListener('click', () => this.openSettingsMenu());
+      return;
+    }
+
+    container.innerHTML = `
+      <div style="margin-bottom: 20px;">
+        <button class="btn-back" style="background:none; border:none; color:var(--primary-color); cursor:pointer; font-size:14px; font-weight:bold;">
+          ← Volver a Ajustes
+        </button>
+      </div>
+      <h2 style="margin-top:0;">Configuración del Prompt Poster</h2>
+      
+      <h4 style="margin-bottom: 8px;">Placeholders Disponibles: (Haz clic para insertar)</h4>
+      <div class="placeholders-container">
+        ${this._placeholders.map(ph => `
+          <div class="placeholder-pill" title="${ph.description || ''}" data-key="{{${ph.key || ph.id}}}">
+            {{${ph.key || ph.id}}}
+          </div>
+        `).join('')}
+        ${this._placeholders.length === 0 ? '<span style="font-size:12px; opacity:0.6;">No hay placeholders</span>' : ''}
+      </div>
+
+      <h4 style="margin-bottom: 8px;">Base Prompt:</h4>
+      <textarea id="prompt-textarea" class="prompt-editor-textarea" spellcheck="false">${this._promptData.basePrompt || ''}</textarea>
+      
+      <div class="summary-actions">
+        <button class="btn-cancel" id="btn-cancel-prompt">Cancelar</button>
+        <button class="btn-accept" id="btn-save-prompt">Guardar Prompt</button>
+      </div>
+    `;
+
+    container.querySelector('.btn-back').addEventListener('click', () => this.openSettingsMenu());
+    container.querySelector('#btn-cancel-prompt').addEventListener('click', () => this.openSettingsMenu());
+    
+    const textarea = container.querySelector('#prompt-textarea');
+    container.querySelectorAll('.placeholder-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        const key = pill.dataset.key;
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        textarea.value = textarea.value.substring(0, start) + key + textarea.value.substring(end);
+        textarea.selectionStart = textarea.selectionEnd = start + key.length;
+        textarea.focus();
+      });
+    });
+
+    container.querySelector('#btn-save-prompt').addEventListener('click', async (e) => {
+      const btn = e.target;
+      btn.textContent = 'Guardando...';
+      btn.disabled = true;
+      
+      try {
+        const updatedPrompt = textarea.value;
+        const payloadData = {
+          basePrompt: updatedPrompt,
+          dateFormat: this._promptData.dateFormat,
+          genreStyles: this._promptData.genreStyles
+        };
+
+        const res = await this._hass.callWS({
+          type: 'call_service',
+          domain: 'rest_command',
+          service: 'actualizar_prompt_apolo',
+          service_data: { payload_data: payloadData },
+          return_response: true
+        });
+        const response = res && res.response ? res.response : res;
+        
+        if (response && response.status && (response.status < 200 || response.status >= 300)) {
+          throw new Error(`API error: ${response.status}`);
+        }
+        
+        alert("¡Prompt guardado con éxito!");
+        this.openSettingsMenu();
+      } catch (err) {
+        console.error("Error al guardar prompt", err);
+        alert("Hubo un error al guardar el prompt.");
+        btn.textContent = 'Guardar Prompt';
+        btn.disabled = false;
+      }
+    });
   }
 
   async fetchSchedules() {
