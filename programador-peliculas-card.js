@@ -637,7 +637,6 @@ class ProgramadorPeliculasCard extends HTMLElement {
       scheduleInfoHtml += `<p><strong>Programado para:</strong> ${displayDate}</p>`;
     }
     
-    // Si la API falla al traer la sinopsis, usamos el texto de Jellyfin como fallback
     const synopsisToDisplay = this._fetchedSynopsis || item.summary || item.description || "Sinopsis no disponible.";
 
     container.innerHTML = `
@@ -649,7 +648,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
           ${item.thumbnail ? `<hui-image image="${item.thumbnail}"></hui-image>` : ''}
         </div>
         <div class="detail-info">
-          <div class="detail-title-large">¡Programado con éxito!</div>
+          <div class="detail-title-large">Confirmar programación</div>
           <div style="font-weight: bold; font-size: 16px; margin-bottom: 8px;">${item.title}</div>
           <div class="detail-synopsis" style="max-height: 150px; overflow-y: auto;">${synopsisToDisplay}</div>
           
@@ -669,7 +668,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
     container.querySelectorAll('hui-image').forEach(img => { img.hass = this._hass; });
 
     container.querySelector('#btn-summary-accept').addEventListener('click', () => {
-      this.resetToMain();
+      this.handleConfirmarProgramacion();
     });
     
     container.querySelector('#btn-summary-edit').addEventListener('click', () => {
@@ -678,8 +677,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
     });
 
     container.querySelector('#btn-summary-cancel').addEventListener('click', () => {
-      this._showCancelModal = true;
-      this.updateUI();
+      this.resetToMain();
     });
   }
 
@@ -697,8 +695,40 @@ class ProgramadorPeliculasCard extends HTMLElement {
 
     const rawId = this._selectedItem.media_content_id || "";
     const cleanId = rawId.replace('media-source://jellyfin/', '');
+
+    btn.textContent = 'Obteniendo sinopsis...';
+    btn.disabled = true;
+
+    try {
+      const synRes = await this._hass.callWS({
+        type: 'call_service',
+        domain: 'rest_command',
+        service: 'obtener_sinopsis_apolo',
+        service_data: { media_id: cleanId },
+        return_response: true
+      });
+      const synResp = synRes && synRes.response ? synRes.response : synRes;
+      
+      if (synResp && synResp.content) {
+        const parsedSyn = typeof synResp.content === 'string' ? JSON.parse(synResp.content) : synResp.content;
+        this._fetchedSynopsis = parsedSyn.synopsis || "";
+      }
+    } catch (errSyn) {
+      console.warn("Fallo al obtener la sinopsis (no crítico)", errSyn);
+      this._fetchedSynopsis = "";
+    }
+
+    btn.textContent = 'Programar';
+    btn.disabled = false;
+    this._viewState = 'summary';
+    this.updateUI();
+  }
+
+  async handleConfirmarProgramacion() {
+    const btn = this.shadowRoot.getElementById('btn-summary-accept');
+    const rawId = this._selectedItem.media_content_id || "";
+    const cleanId = rawId.replace('media-source://jellyfin/', '');
     
-    // Ensure the date has seconds for Java's LocalDateTime to parse correctly
     let safeDate = this._selectedDate;
     if (safeDate && safeDate.length === 16) {
       safeDate += ':00';
@@ -725,7 +755,6 @@ class ProgramadorPeliculasCard extends HTMLElement {
     btn.disabled = true;
 
     try {
-      // 1. Programar la película o serie
       const res = await this._hass.callWS({
         type: 'call_service',
         domain: 'rest_command',
@@ -739,77 +768,14 @@ class ProgramadorPeliculasCard extends HTMLElement {
         throw new Error(`API error: ${response.status}`);
       }
       
-      // Parsear la respuesta para obtener el ID de la programación
-      if (response && response.content) {
-        try {
-          const parsed = typeof response.content === 'string' ? JSON.parse(response.content) : response.content;
-          this._scheduledId = parsed.id;
-        } catch (e) {
-          console.warn("No se pudo parsear el ID del schedule", e);
-        }
-      }
-
-      // 2. Obtener la sinopsis usando el nuevo endpoint
-      btn.textContent = 'Obteniendo sinopsis...';
-      try {
-        const synRes = await this._hass.callWS({
-          type: 'call_service',
-          domain: 'rest_command',
-          service: 'obtener_sinopsis_apolo',
-          service_data: { media_id: cleanId },
-          return_response: true
-        });
-        const synResp = synRes && synRes.response ? synRes.response : synRes;
-        
-        if (synResp && synResp.content) {
-          const parsedSyn = typeof synResp.content === 'string' ? JSON.parse(synResp.content) : synResp.content;
-          this._fetchedSynopsis = parsedSyn.synopsis || "";
-        }
-      } catch (errSyn) {
-        console.warn("Fallo al obtener la sinopsis (no crítico)", errSyn);
-        this._fetchedSynopsis = "";
-      }
-
-      // 3. Cambiar a vista de resumen
-      this._viewState = 'summary';
-      this.updateUI();
-
+      alert("¡Programado con éxito!");
+      this.resetToMain();
     } catch (err) {
       console.error("Error al programar en Apolo", err);
-      btn.classList.add('error');
-      btn.textContent = 'Error al programar';
-      
-      setTimeout(() => {
-        btn.classList.remove('success', 'error');
-        btn.textContent = 'Programar';
-        btn.disabled = false;
-      }, 3000);
+      alert("Hubo un error al programar.");
+      btn.textContent = 'Aceptar';
+      btn.disabled = false;
     }
-  }
-
-  async handleCancelarConfirmado() {
-    this._showCancelModal = false;
-    
-    if (this._scheduledId) {
-      try {
-        await this._hass.callWS({
-          type: 'call_service',
-          domain: 'rest_command',
-          service: 'cancelar_programacion_apolo',
-          service_data: { schedule_id: this._scheduledId },
-          return_response: true
-        });
-        console.log("Programación cancelada exitosamente");
-      } catch(err) {
-        console.error("Error al cancelar la programación", err);
-        alert("Hubo un error al intentar cancelar la programación en el servidor.");
-      }
-    } else {
-      console.warn("No hay ID de programación para cancelar.");
-    }
-    
-    // Volver a la pantalla inicial en cualquier caso (asumimos que el usuario no la quiere)
-    this.resetToMain();
   }
 
   async fetchSchedules() {
