@@ -1057,7 +1057,7 @@ class ProgramadorPeliculasCard extends HTMLElement {
         type: 'call_service',
         domain: 'rest_command',
         service: 'actualizar_programacion_apolo',
-        service_data: { schedule_id: id, programacion: safeDate },
+        service_data: { schedule_id: id, programacion: safeDate, usuario: this._hass.user.name },
         return_response: true
       });
       
